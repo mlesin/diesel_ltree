@@ -1,3 +1,3 @@
 DROP TABLE my_tree;
 
-DESTROY EXTENSION ltree;
+DROP EXTENSION ltree;

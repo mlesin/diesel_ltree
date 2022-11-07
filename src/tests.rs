@@ -99,6 +99,77 @@ fn base_operations() {
 }
 
 #[test]
+fn contains_in() {
+    let mut connection = get_connection();
+
+    let mt2 = diesel::alias!(my_tree as mt2);
+    let subquery = mt2
+        .filter(
+            mt2.field(my_tree::path)
+                .contained_by(text2ltree("root.archaea.thermoprotei")),
+        )
+        .select(mt2.field(my_tree::path))
+        .into_boxed();
+
+    let query = my_tree::table
+        .select((my_tree::id, ltree2text(my_tree::path)))
+        .filter(my_tree::path.contains_in(subquery))
+        // .filter(my_tree::path.contained_by_in(subquery))
+        .order(my_tree::id);
+
+    let results = query
+        .load::<MyTree>(&mut connection)
+        .unwrap()
+        .into_iter()
+        .map(|t| t.path)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        results,
+        [
+            Ltree("root".to_string()),
+            Ltree("root.archaea".to_string()),
+            Ltree("root.archaea.thermoprotei.pyrodictiaceae".to_string()),
+            Ltree("root.archaea.thermoprotei.thermoproteaceae".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn contained_by_in() {
+    let mut connection = get_connection();
+
+    let mt2 = diesel::alias!(my_tree as mt2);
+    let subquery = mt2
+        .filter(
+            mt2.field(my_tree::path)
+                .contained_by(text2ltree("root.archaea.thermoprotei")),
+        )
+        .select(mt2.field(my_tree::path))
+        .into_boxed();
+
+    let query = my_tree::table
+        .select((my_tree::id, ltree2text(my_tree::path)))
+        .filter(my_tree::path.contained_by_in(subquery))
+        .order(my_tree::id);
+
+    let results = query
+        .load::<MyTree>(&mut connection)
+        .unwrap()
+        .into_iter()
+        .map(|t| t.path)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        results,
+        [
+            Ltree("root.archaea.thermoprotei.pyrodictiaceae".to_string()),
+            Ltree("root.archaea.thermoprotei.thermoproteaceae".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn insert_query_generation() {
     let query = debug_query::<Pg, _>(&diesel::insert_into(my_tree::table).values(&vec![
         my_tree::path.eq(Ltree("root".to_string())),

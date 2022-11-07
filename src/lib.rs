@@ -105,8 +105,12 @@ pub mod functions {
 
 pub mod dsl {
     use crate::sql_types::*;
-    use diesel::expression::{AsExpression, Expression};
-    use diesel::sql_types::Array;
+    use diesel::backend::{Backend, DieselReserveSpecialization};
+    use diesel::expression::array_comparison::AsInExpression;
+    use diesel::expression::{AsExpression, Expression, ValidGrouping};
+    use diesel::query_builder::{AstPass, QueryFragment, QueryId};
+    use diesel::sql_types::{Array, DieselNumericOps};
+    use diesel::QueryResult;
 
     mod predicates {
         use crate::sql_types::*;
@@ -126,6 +130,28 @@ pub mod dsl {
 
     use self::predicates::*;
 
+    #[derive(Debug, Copy, Clone, QueryId, Default, DieselNumericOps, ValidGrouping)]
+    pub struct ArrayGrouped<T>(pub T);
+
+    impl<T: Expression> Expression for ArrayGrouped<T> {
+        type SqlType = T::SqlType;
+    }
+
+    impl<T, DB> QueryFragment<DB> for ArrayGrouped<T>
+    where
+        T: QueryFragment<DB>,
+        DB: Backend + DieselReserveSpecialization,
+    {
+        fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, DB>) -> QueryResult<()> {
+            out.push_sql("ARRAY(");
+            self.0.walk_ast(out.reborrow())?;
+            out.push_sql(")");
+            Ok(())
+        }
+    }
+
+    impl_selectable_expression!(ArrayGrouped<T>);
+
     pub trait LtreeExtensions: Expression<SqlType = Ltree> + Sized {
         fn contains<T: AsExpression<Ltree>>(self, other: T) -> Contains<Self, T::Expression> {
             Contains::new(self, other.as_expression())
@@ -136,6 +162,13 @@ pub mod dsl {
             other: T,
         ) -> Contains<Self, T::Expression> {
             Contains::new(self, other.as_expression())
+        }
+
+        fn contains_in<T: AsInExpression<Ltree>>(
+            self,
+            other: T,
+        ) -> Contains<Self, ArrayGrouped<T::InExpression>> {
+            Contains::new(self, ArrayGrouped(other.as_in_expression()))
         }
 
         fn contained_by<T: AsExpression<Ltree>>(
@@ -150,6 +183,13 @@ pub mod dsl {
             other: T,
         ) -> ContainedBy<Self, T::Expression> {
             ContainedBy::new(self, other.as_expression())
+        }
+
+        fn contained_by_in<T: AsInExpression<Ltree>>(
+            self,
+            other: T,
+        ) -> ContainedBy<Self, ArrayGrouped<T::InExpression>> {
+            ContainedBy::new(self, ArrayGrouped(other.as_in_expression()))
         }
 
         fn matches<T: AsExpression<Lquery>>(self, other: T) -> Matches<Self, T::Expression> {
