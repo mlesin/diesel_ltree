@@ -34,8 +34,8 @@ struct MyTree {
 fn get_connection() -> PgConnection {
     dotenv::dotenv().ok();
 
-    let database_url = env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL must be set");
-    PgConnection::establish(&database_url).expect("Error connecting to TEST_DATABASE_URL")
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    PgConnection::establish(&database_url).expect("Error connecting to DATABASE_URL")
 }
 
 #[test]
@@ -270,6 +270,14 @@ fn operators() {
         text2ltree("foo_bar_baz").matches_any(array((lquery("foo_bat%"),))),
     ))
     .get_result::<(bool, bool)>(&mut connection);
+    assert_eq!(result, Ok((true, false)));
+
+    let result = select((
+        text2ltree("foo_bar_baz").matches_any_lqueries(vec!["foo_bar%", "foo_bat%"]),
+        text2ltree("foo_bar_baz").matches_any_lqueries(vec!["foo_bat%"]),
+    ));
+    println!("{:?}", debug_query::<Pg, _>(&result));
+    let result = result.get_result::<(bool, bool)>(&mut connection);
     assert_eq!(result, Ok((true, false)));
 
     let result = select((

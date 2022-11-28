@@ -109,7 +109,7 @@ pub mod dsl {
     use diesel::expression::array_comparison::AsInExpression;
     use diesel::expression::{AsExpression, Expression, ValidGrouping};
     use diesel::query_builder::{AstPass, QueryFragment, QueryId};
-    use diesel::sql_types::{Array, DieselNumericOps};
+    use diesel::sql_types::{Array, DieselNumericOps, Text};
     use diesel::QueryResult;
 
     mod predicates {
@@ -151,6 +151,27 @@ pub mod dsl {
     }
 
     impl_selectable_expression!(ArrayGrouped<T>);
+
+    #[derive(Debug, Copy, Clone, QueryId, Default, DieselNumericOps, ValidGrouping)]
+    pub struct LqueryArrayCast<T>(pub T);
+
+    impl<T: Expression> Expression for LqueryArrayCast<T> {
+        type SqlType = T::SqlType;
+    }
+
+    impl<T, DB> QueryFragment<DB> for LqueryArrayCast<T>
+    where
+        T: QueryFragment<DB>,
+        DB: Backend + DieselReserveSpecialization,
+    {
+        fn walk_ast<'b>(&'b self, mut out: AstPass<'_, 'b, DB>) -> QueryResult<()> {
+            self.0.walk_ast(out.reborrow())?;
+            out.push_sql("::lquery[]");
+            Ok(())
+        }
+    }
+
+    impl_selectable_expression!(LqueryArrayCast<T>);
 
     pub trait LtreeExtensions: Expression<SqlType = Ltree> + Sized {
         fn contains<T: AsExpression<Ltree>>(self, other: T) -> Contains<Self, T::Expression> {
@@ -201,6 +222,13 @@ pub mod dsl {
             other: T,
         ) -> MatchesAny<Self, T::Expression> {
             MatchesAny::new(self, other.as_expression())
+        }
+
+        fn matches_any_lqueries<T: AsInExpression<Text>>(
+            self,
+            other: T,
+        ) -> MatchesAny<Self, LqueryArrayCast<T::InExpression>> {
+            MatchesAny::new(self, LqueryArrayCast(other.as_in_expression()))
         }
 
         fn tmatches<T: AsExpression<Ltxtquery>>(self, other: T) -> TMatches<Self, T::Expression> {
